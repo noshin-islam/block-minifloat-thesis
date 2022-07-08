@@ -30,6 +30,7 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
 
     assert isinstance(x, torch.Tensor), "x is not a single precision Floating Point Tensor"
 
+    print("input: ", x)
     # shared exponent
     mean_func = lambda x, dim: torch.mean(x, dim)
     max_func = lambda x, dim: torch.max(x, dim)[0]
