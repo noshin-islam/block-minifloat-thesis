@@ -40,6 +40,7 @@ def block_B(data, ebit, func):
     shift_exponent = torch.floor(torch.log2(entry+1e-28))
     shift_exponent = torch.clamp(shift_exponent, -2**(ebit-1), 2**(ebit-1)-1)
     shift_exponent = shift_exponent.view([data.size(0)]+[1 for _ in range(data.dim()-1)])
+    # print("exp: ", shift_exponent)
     return shift_exponent
 
 # block entire tensor

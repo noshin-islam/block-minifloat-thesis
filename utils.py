@@ -5,6 +5,9 @@ Code modified from Qpytorch repository. https://github.com/Tiiiger/QPyTorch/blob
 import os
 import torch
 
+from models import SingleLayer
+
+
 def save_checkpoint(dir, epoch, recent=False, **kwargs):
     state = {
         'epoch': epoch,
@@ -52,6 +55,27 @@ def run_epoch(loader, model, criterion, optimizer=None,
 
     ttl = 0
     with torch.autograd.set_grad_enabled(phase=="train"):
+        
+        ### single layer input test
+        # if isinstance(model, SingleLayer):
+        # data = torch.tensor([7.666, 6.98, 7.01, 0.00879, 0.0142, 0.0158])
+        # data = torch.reshape(data, (3,2))
+        # target = torch.ones(3)
+        # output = model(data)
+        # loss = criterion(output, target)
+        
+        # loss_sum += loss.cpu().item() * input.size(0)
+        # pred = output.data.max(1, keepdim=True)[1]
+        # correct += pred.eq(target.data.view_as(pred)).sum()
+        # ttl += input.size()[0]
+
+        # if phase=="train":
+        #     optimizer.zero_grad()
+        #     loss.backward()
+        #     optimizer.step()
+
+            ###need to finish up
+        # else:
         for i, (input, target) in enumerate(loader):
             input = input.to(device=device)
             target = target.to(device=device)
@@ -119,7 +143,7 @@ def bn_update(loader, model):
     model.apply(lambda module: _get_momenta(module, momenta))
     n = 0
     for input, _ in loader:
-        input = input.cuda(async=True)
+        input = input.cuda(non_blocking=True)
         input_var = torch.autograd.Variable(input)
         b = input_var.data.size(0)
 

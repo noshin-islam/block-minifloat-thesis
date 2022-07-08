@@ -14,3 +14,10 @@ dist
 __pycache__/
 *.py[cod]
 *$py.class
+CIFAR10/**
+.DS_Store
+.python-version
+
+MNIST/**
+logs/**
+

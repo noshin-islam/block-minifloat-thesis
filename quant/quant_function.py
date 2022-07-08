@@ -20,8 +20,13 @@ def add_r_(data):
     r = torch.rand_like(data)
     data.add_(r)
 
+# Developing a function to round to a multiple - https://datagy.io/python-round-to-multiple/
+def round_to_multiple(number, multiple):
+    return multiple * torch.round(number / multiple)
 
-def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x"):
+# print(round_to_multiple(-10,2))
+
+def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", k_exp = 1):
 
     assert isinstance(x, torch.Tensor), "x is not a single precision Floating Point Tensor"
 
@@ -63,11 +68,28 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x"):
     
     # minifloat
     else:
+
+        ### is scaling needed here? k x offset  ----- no need to multiply max exponent
         offset = max_exponent - number.emax
+        print("max exp: ", max_exponent)
+        print("offset: ", offset)
+
+        rem = torch.remainder(offset, k_exp)
+        # print(rem)
+        rounded = round_to_multiple(offset, k_exp)
+        # print("rounded: ", rounded)
+        offset = torch.where(rem!=0, rounded, offset)
+        print("offset post rounding: ", offset)
+
+        # if (offset % k_exp != 0):
+        #     offset = round_to_multiple(offset, k_exp)
+            # print("offset post rounding: ", offset)
 
         # shared exponent shifting
         shift = 2**(-offset)
-        i = x * shift
+        print("shift: ", shift)
+        i = x * shift #this multiplication is done in order to left or right shift the data to centre it around 0 -- anything that cannot be represented will be 0
+        print("i = x*shift: ", i)
 
         # clamping at zero (uses QPyTorch float_quantizer - qtorch doesn't have a zero bit?)
         if (number.flush_to_zero):
@@ -88,21 +110,29 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x"):
 
         sgn = torch.sign(i)
         i = torch.abs(i)
-        e = torch.floor(torch.log2(i+1e-60))
+        e = torch.floor(torch.log2(i+1e-60)) #exponent of every point in the data
+        print("exp of every point: ", e)
         # clamp the exponent
         e.clamp_(emin+1, emax) # emin+1 for subnormal region
+        print("exp of every point post clamp: ", e)
         # unpack frac for subnormal and normal region
         ie = i*2**(-e)
+        print("ie: ",ie)
         me = 2**(e)
-        f = torch.where(i<esbn, ie, ie-1)
-
+        #something that has its exponent clamped out in the e.clamp stage enters into the subnorm region
+        f = torch.where(i<esbn, ie, ie-1)  #for the subnormal region, just use ie, else for normal region, subtact 1 to remove the 1.xy part 
+        #f stands for just the fractional part of the number to be represented  --- between 1 and 0
+        #f is an integer number
+        print("frac part: ", f)
 
         # rounding on frac
         if rounding == "stochastic":
-            r = torch.rand_like(f)
+            r = torch.rand_like(f)  #generates decimal number between 0 and 1 
+            print("r: ", r)
             f.mul_(mval).add_(r).floor_()
-            clipped = f.clamp_(0, mval)
+            clipped = f.clamp_(0, mval) #it works dont touch it
             clipped.div_(mval).mul_(me)
+            print("f post clip: ",clipped)
         else:
             f.mul_(mval).round_()
             clipped.div_(mval).mul_(me)
@@ -110,6 +140,13 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x"):
         k = torch.where(i<esbn, clipped, me+clipped)
         k.clamp_(-rlim, rlim)
         out = sgn * k * 2**(offset)
+
+        print(f"quantised entry: {k} x 2^{offset}")
+        print("")
+        print("")
+        print("")
+        print("")
+        print("")
         return out
 
 
@@ -150,8 +187,8 @@ def quantizer(forward_number=None, backward_number=None,
    
     # forward and backward quantisation functions
     tensor_type = "w" if backward_number is None else "x"
-    forward_quant = lambda x, num, rd, tt: block_minifloat_quantize(x, num, rd, tt)
-    backward_quant = lambda x, num, rd, tt: block_minifloat_quantize(x, num, rd, tt)  
+    forward_quant = lambda x, num, rd, tt, k_exp: block_minifloat_quantize(x, num, rd, tt, k_exp)
+    backward_quant = lambda x, num, rd, tt, k_exp: block_minifloat_quantize(x, num, rd, tt, k_exp)  
 
 
     class Rounding(torch.autograd.Function):
@@ -159,7 +196,8 @@ def quantizer(forward_number=None, backward_number=None,
         def forward(self, x):
             if forward_number==None: return x
 
-            out = forward_quant(x.contiguous(), forward_number, forward_rounding, tensor_type)
+            k_val = forward_number.k_exp
+            out = forward_quant(x.contiguous(), forward_number, forward_rounding, tensor_type, k_val)
 
             return out.clone()
 
@@ -169,8 +207,9 @@ def quantizer(forward_number=None, backward_number=None,
                 if backward_number == None:
                     grad_input = grad_output
                 else:
+                    k_val = backward_number.k_exp
                     grad_input = backward_quant(grad_output.contiguous(), backward_number, 
-                        backward_rounding, tensor_type)
+                        backward_rounding, tensor_type, k_val)
             else:
                 grad_input = None
 

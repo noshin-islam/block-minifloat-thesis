@@ -5,7 +5,7 @@ import torchvision.datasets as datasets
 import os
 
 def get_data(dataset, data_path, batch_size):
-    assert dataset in ["CIFAR10", "CIFAR100", "IMAGENET"], "dataset not supported {}".format(dataset)
+    assert dataset in ["CIFAR10", "CIFAR100", "IMAGENET", "MNIST"], "dataset not supported {}".format(dataset)
     print('Loading dataset {} from {}'.format(dataset, data_path))
     if dataset in ["CIFAR10", "CIFAR100"]:
         ds = getattr(datasets, dataset)
@@ -24,6 +24,7 @@ def get_data(dataset, data_path, batch_size):
         test_set = ds(path, train=False, download=True, transform=transform_test)
         train_sampler = None
         num_classes = 10
+
     elif dataset=="IMAGENET":
         traindir = os.path.join(data_path, dataset.upper(), 'train')
         valdir = os.path.join(data_path, dataset.upper(), 'val')
@@ -44,19 +45,40 @@ def get_data(dataset, data_path, batch_size):
             normalize,
         ]))
         num_classes = 1000
+
+    elif dataset=="MNIST":
+        # traindir = '/MNIST/train'
+        # valdir = '/MNIST/val'
+        # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+        #                                  std=[0.229, 0.224, 0.225])
+        IMAGE_SIZE = 20
+        #Generates an object to store multiple transformations
+
+        transform = transforms.Compose([transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)), transforms.ToTensor()])
+
+        train_set = torchvision.datasets.MNIST(root='/tmp/MNIST', train=True,
+                                                download=True, transform=transform)
+        train_set = [item for item in train_set]
+
+        test_set = torchvision.datasets.MNIST(root='/tmp/MNIST', train=False,
+                                            download=True, transform=transform)
+
+        test_set = [item for item in test_set]
+        num_classes = 10
+
     loaders = {
         'train': torch.utils.data.DataLoader(
             train_set,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=8,
+            num_workers=0,
             pin_memory=True
         ),
         'test': torch.utils.data.DataLoader(
             test_set,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=8,
+            num_workers=0,
             pin_memory=True
         )
     }

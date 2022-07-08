@@ -25,18 +25,23 @@ class BlockMinifloat(Number):
                         supposed to be stored on hardware (not counting the virtual bits).
         - :attr: `tile`: tile dimensions for the shared exponent 
     """
-    def __init__(self, exp, man, tile=-1, flush_to_zero=False):
+    def __init__(self, exp, man, tile=-1, flush_to_zero=False, k_exp = 1):
         assert 8 >= exp >= -1, "invalid bits for exponent:{}".format(exp)
         assert 23 >= man >= -1, "invalid bits for mantissa:{}".format(man)
         self.exp = exp
         self.man = man
         self.tile = tile
-        self.emax = 2**(exp)-1 - 2**(exp-1)
-        self.emin = -2**(exp-1)
+
+        self.k_exp = k_exp
+
+        self.emax = (2**(exp)-1 - 2**(exp-1))*k_exp
+        self.emin = (-2**(exp-1))*k_exp
         self.max_number = 2**(self.emax)*(2-2**(-self.man))
         self.flush_to_zero = flush_to_zero
         #self.of_emax = self.emax
         #self.of_man = self.man 
+
+        #for scaling by k multiply emax and emin by k (wherever 2**sth it will be 2^ksth)
 
 
     def __str__(self):
@@ -54,3 +59,5 @@ class BlockMinifloat(Number):
                 self.exp, self.man, self.tile)
 
 
+# test_num = BlockMinifloat(exp = 2, man = 3, k_exp = 2)
+# print("exp scaling factor is ", test_num.k_exp)
