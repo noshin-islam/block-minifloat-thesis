@@ -55,27 +55,7 @@ def run_epoch(loader, model, criterion, optimizer=None,
 
     ttl = 0
     with torch.autograd.set_grad_enabled(phase=="train"):
-        
-        ### single layer input test
-        # if isinstance(model, SingleLayer):
-        #     data = torch.tensor([7.666, 6.98, 7.01, 0.00879, 0.0142, 0.0158])
-        #     data = torch.reshape(data, (3,2))
-        #     target = torch.ones(3)
-        #     output = model(data)
-        #     loss = criterion(output, target)
-            
-        #     loss_sum += loss.cpu().item() * input.size(0)
-        #     pred = output.data.max(1, keepdim=True)[1]
-        #     correct += pred.eq(target.data.view_as(pred)).sum()
-        #     ttl += input.size()[0]
-
-        #     if phase=="train":
-        #         optimizer.zero_grad()
-        #         loss.backward()
-        #         optimizer.step()
-
-            ###need to finish up
-        # else:
+       
         for i, (input, target) in enumerate(loader):
             input = input.to(device=device)
             target = target.to(device=device)

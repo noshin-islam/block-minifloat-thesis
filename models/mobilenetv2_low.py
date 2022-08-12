@@ -77,7 +77,8 @@ class MobileNetV2(nn.Module):
         super(MobileNetV2, self).__init__()
         # NOTE: change conv1 stride 2 -> 1 for CIFAR10
         self.imagenet = (image_size >= 224)
-        self.cfg = self.cfg_imagenet if imagenet else self.cfg_cifar
+        # self.cfg = self.cfg_imagenet if imagenet else self.cfg_cifar
+        self.cfg = self.cfg_cifar
 
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=2 if self.imagenet else 1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(32)

@@ -58,6 +58,16 @@ class BlockMinifloat(Number):
             return "BlockMinifloat (exponent={:d}, mantissa={:d}, tile={:d})".format(
                 self.exp, self.man, self.tile)
 
+    
+    
+    def change_k(self, new_k):
 
-# test_num = BlockMinifloat(exp = 2, man = 3, k_exp = 2)
-# print("exp scaling factor is ", test_num.k_exp)
+        self.k_exp = new_k
+        self.emax = (2**(self.exp)-1 - 2**(self.exp-1))*self.k_exp
+        self.emin = (-2**(self.exp-1))*self.k_exp
+        self.max_number = 2**(self.emax)*(2-2**(-self.man))
+
+# test_num = BlockMinifloat(exp=2, man=5, tile=-1, flush_to_zero=False, k_exp= 3)
+# print(f"emax is {test_num.emax}")
+# test_num.change_k(1)
+# print(f"emax is {test_num.emax}")

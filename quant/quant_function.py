@@ -30,7 +30,8 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
 
     assert isinstance(x, torch.Tensor), "x is not a single precision Floating Point Tensor"
 
-    print("input: ", x)
+    # print("quant input: ", x)
+    # print(f"k value being used for quantisation is {k_exp}")
     # shared exponent
     mean_func = lambda x, dim: torch.mean(x, dim)
     max_func = lambda x, dim: torch.max(x, dim)[0]
@@ -72,15 +73,19 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
 
         ### is scaling needed here? k x offset  ----- no need to multiply max exponent
         offset = max_exponent - number.emax
-        print("max exp: ", max_exponent)
-        print("offset: ", offset)
+        # print("max exp: ", max_exponent)
+
+        # print(f"exp to calc emax: {number.exp}")
+        # print(f"k to calc emax: {number.k_exp}")
+        # print(f"emax: {number.emax}")
+        # print("offset: ", offset)
 
         rem = torch.remainder(offset, k_exp)
-        # print(rem)
+        # print(f"{rem}")
         rounded = round_to_multiple(offset, k_exp)
         # print("rounded: ", rounded)
         offset = torch.where(rem!=0, rounded, offset)
-        print("offset post rounding: ", offset)
+        # print("offset post rounding: ", offset)
 
         # if (offset % k_exp != 0):
         #     offset = round_to_multiple(offset, k_exp)
@@ -88,9 +93,9 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
 
         # shared exponent shifting
         shift = 2**(-offset)
-        print("shift: ", shift)
+        # print("shift: ", shift)
         i = x * shift #this multiplication is done in order to left or right shift the data to centre it around 0 -- anything that cannot be represented will be 0
-        print("i = x*shift: ", i)
+        # print("i = x*shift: ", i)
 
         # clamping at zero (uses QPyTorch float_quantizer - qtorch doesn't have a zero bit?)
         if (number.flush_to_zero):
@@ -112,28 +117,29 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
         sgn = torch.sign(i)
         i = torch.abs(i)
         e = torch.floor(torch.log2(i+1e-60)) #exponent of every point in the data
-        print("exp of every point: ", e)
+        # print("exp of every point: ", e)
         # clamp the exponent
         e.clamp_(emin+1, emax) # emin+1 for subnormal region
-        print("exp of every point post clamp: ", e)
+        # print(f"exp being clamped to the range: {emin+1} to {emax}")
+        # print("exp of every point post clamp: ", e)
         # unpack frac for subnormal and normal region
         ie = i*2**(-e)
-        print("ie: ",ie)
+        # print("ie: ",ie)
         me = 2**(e)
         #something that has its exponent clamped out in the e.clamp stage enters into the subnorm region
         f = torch.where(i<esbn, ie, ie-1)  #for the subnormal region, just use ie, else for normal region, subtact 1 to remove the 1.xy part 
         #f stands for just the fractional part of the number to be represented  --- between 1 and 0
         #f is an integer number
-        print("frac part: ", f)
+        # print("frac part: ", f)
 
         # rounding on frac
         if rounding == "stochastic":
             r = torch.rand_like(f)  #generates decimal number between 0 and 1 
-            print("r: ", r)
+            # print("r: ", r)
             f.mul_(mval).add_(r).floor_()
             clipped = f.clamp_(0, mval) #it works dont touch it
             clipped.div_(mval).mul_(me)
-            print("f post clip: ",clipped)
+            # print("f post clip: ",clipped)
         else:
             f.mul_(mval).round_()
             clipped.div_(mval).mul_(me)
@@ -142,12 +148,13 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
         k.clamp_(-rlim, rlim)
         out = sgn * k * 2**(offset)
 
-        print(f"quantised entry: {k} x 2^{offset}")
-        print("")
-        print("")
-        print("")
-        print("")
-        print("")
+        # print(f"quantised entry: {k} x 2^{offset}")
+        # print("")
+        # print("Error: ", x-out)
+        # print("")
+        # print("")
+        # print("")
+        # # print("")
         return out
 
 
@@ -173,6 +180,7 @@ def quantizer(forward_number=None, backward_number=None,
         A quantization function as specified (torch.Tensor -> torch.Tensor)
     """
     if forward_number is not None:
+        print(f"forward number k val inside quantiser: {forward_number.k_exp}")
         if forward_number.exp == -1 or forward_number.man == -1:
             forward_number = None
     if backward_number is not None:

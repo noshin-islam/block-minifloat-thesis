@@ -19,5 +19,5 @@ CIFAR10/**
 .python-version
 
 MNIST/**
-logs/**
-
+testlogs/**
+maincopy.py

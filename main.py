@@ -57,7 +57,8 @@ if __name__ == "__main__":
     parser.add_argument('--output_dir', type=str, default='./checkpoints', help='output directory')
 
     #take scaling factor as cmd line arg
-    parser.add_argument('--k', type=int, required=True)
+    parser.add_argument('--k', type=int, default=1)
+    parser.add_argument('--adaptive_scale', type=str, default='False')
 
     for num in num_types:
         parser.add_argument('--{}-man'.format(num), type=int, default=-1, metavar='N',
@@ -118,6 +119,11 @@ if __name__ == "__main__":
 
     # Build model
     print('Model: {}'.format(args.model))
+    if args.adaptive_scale == 'True':
+        print(f"Adaptive Scaling being used, starting from k = {args.k}")
+    else:
+        print(f"Standard exponent scaling of k = {args.k} being used")
+
     model_cfg = getattr(models, args.model)
     model_cfg.kwargs.update({"quant":acc_err_quant})
 
@@ -163,7 +169,7 @@ if __name__ == "__main__":
     # count_parameters(model)
 
     ####
-    # model.to(device)
+    model.to(device)
     
     # model.cuda()
 
@@ -234,16 +240,77 @@ if __name__ == "__main__":
     # Prepare logging
     columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'tr_time', 'te_loss', 'te_acc', 'te_time']
 
+    k_value = 3
+    checkpoint_num = 5
+    PATH = 'testlogs/checkpoint.pth'
+
     for epoch in range(start_epoch, args.epochs):
-        print(f"Epoch: {epoch}")
+        print(f"Epoch: {epoch+1}")
         time_ep = time.time()
 
         lr = schedule(epoch)
         utils.adjust_learning_rate(optimizer, lr)
+
+        # ADAPTIVE SCALING SECTION
+        if args.adaptive_scale == 'True':
+            
+            if ((epoch+1) != 1 and number_dict["weight"].k_exp != 1 and (epoch+1) % checkpoint_num == 0):
+                print("K value switch")
+                # weight activate error accuracy grad momentum
+                print(f'Old k = {number_dict["weight"].k_exp}')
+
+                #updating the k values by subtracting 1
+                number_dict["weight"].change_k(number_dict["weight"].k_exp-1)
+                number_dict["activate"].change_k(number_dict["activate"].k_exp-1)
+                number_dict["error"].change_k(number_dict["error"].k_exp-1)
+                number_dict["acc"].change_k(number_dict["acc"].k_exp-1) #accuracy
+                number_dict["grad"].change_k(number_dict["grad"].k_exp-1)
+                number_dict["momentum"].change_k(number_dict["momentum"].k_exp-1)
+
+                print(f'New k = {number_dict["weight"].k_exp}')
+
+                weight_quantizer = quantizer(forward_number=number_dict["weight"], forward_rounding=args.weight_rounding)
+                grad_quantizer   = quantizer(forward_number=number_dict["grad"], forward_rounding=args.grad_rounding)
+                momentum_quantizer = quantizer(forward_number=number_dict["momentum"], forward_rounding=args.momentum_rounding)
+                acc_quantizer = quantizer(forward_number=number_dict["acc"], forward_rounding=args.acc_rounding)
+                acc_err_quant = lambda : Quantizer(number_dict["activate"], number_dict["error"], args.activate_rounding, args.error_rounding)
+
+                model_cfg = getattr(models, args.model)
+                model_cfg.kwargs.update({"quant":acc_err_quant})
+                model = model_cfg.base(*model_cfg.args, num_classes=num_classes, **model_cfg.kwargs)
+                # print("model weights before loading checkpoint: ", model.fc1.weight)
+
+                ## loading back the model state dictionary into the newly defined model
+                checkpoint = torch.load(PATH)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.to(device)
+                # print("model weights after loading checkpoint: ", model.fc1.weight)
+
+                # loading in the new optimiser
+                criterion = F.cross_entropy
+                optimizer = SGD(model.parameters(), lr = args.lr_init, momentum=0.9, weight_decay = args.wd)
+
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                # epoch = checkpoint['epoch']
+                # loss = checkpoint['loss']
+
+                optimizer = OptimLP(optimizer, weight_quant=weight_quantizer, grad_quant=grad_quantizer, momentum_quant=momentum_quantizer, acc_quant=acc_quantizer)
+
+
         train_res = utils.run_epoch(loaders['train'], model, criterion,
                                     optimizer=optimizer, phase="train" )
         time_pass = time.time() - time_ep
         train_res['time_pass'] = time_pass
+
+        ## saving the model and optimiser state for adaptive scaling
+        epc_num = epoch+1
+        if (epc_num == 4 or epc_num == 9 or epc_num == 14):
+            torch.save({
+                'epoch': epc_num,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': train_res['loss']
+                }, PATH)
 
         if epoch == 0 or epoch % args.eval_freq == args.eval_freq - 1 or epoch == args.epochs - 1:
             time_ep = time.time()
