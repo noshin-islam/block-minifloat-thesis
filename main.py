@@ -118,6 +118,9 @@ if __name__ == "__main__":
                                         args.activate_rounding, args.error_rounding)
 
     # Build model
+    seed = 3
+    torch.manual_seed(seed)
+
     print('Model: {}'.format(args.model))
     if args.adaptive_scale == 'True':
         print(f"Adaptive Scaling being used, starting from k = {args.k}")
@@ -136,6 +139,10 @@ if __name__ == "__main__":
     if (args.model == "ResNet18LP") or (args.model == "MobileNetV2LP"): 
         model_cfg.kwargs.update({"image_size":224 if args.dataset=="IMAGENET" else 32})
     model = model_cfg.base(*model_cfg.args, num_classes=num_classes, **model_cfg.kwargs)
+
+    for name, param in model.named_parameters():
+        print(f"name: {name}")
+        print(f"value: {param}")
     
 
 
