@@ -19,6 +19,9 @@ from data import get_data
 from optim import OptimLP
 from torch.optim import SGD
 from quant import *
+
+from torch.optim.swa_utils import AveragedModel, update_bn, SWALR
+
 # import PrettyTable
 #from qtorch import FloatingPoint
 
@@ -59,6 +62,17 @@ if __name__ == "__main__":
     #take scaling factor as cmd line arg
     parser.add_argument('--k', type=int, default=1)
     parser.add_argument('--adaptive_scale', type=str, default='False')
+    parser.add_argument('--adaptive_start', type=int, default=5)
+
+    # SWA implementation: https://github.com/izmailovpavel/torch_swa_examples/blob/master/train.py
+
+    parser.add_argument('--swa', action='store_true', help='swa usage flag (default: off)')
+    parser.add_argument('--swa_start', type=float, default=161, metavar='N', help='SWA start epoch number (default: 161)')
+    parser.add_argument('--swa_lr', type=float, default=0.05, metavar='LR', help='SWA LR (default: 0.05)')
+    parser.add_argument('--swa_c_epochs', type=int, default=1, metavar='N',
+                        help='SWA model collection frequency/cycle length in epochs (default: 1)')
+    parser.add_argument('--swa_on_cpu', action='store_true', help='store swa model on cpu flag (default: off)')
+
 
     for num in num_types:
         parser.add_argument('--{}-man'.format(num), type=int, default=-1, metavar='N',
@@ -140,9 +154,9 @@ if __name__ == "__main__":
         model_cfg.kwargs.update({"image_size":224 if args.dataset=="IMAGENET" else 32})
     model = model_cfg.base(*model_cfg.args, num_classes=num_classes, **model_cfg.kwargs)
 
-    for name, param in model.named_parameters():
-        print(f"name: {name}")
-        print(f"value: {param}")
+    # for name, param in model.named_parameters():
+    #     print(f"name: {name}")
+    #     print(f"value: {param}")
     
 
 
@@ -180,13 +194,18 @@ if __name__ == "__main__":
     
     # model.cuda()
 
-
+    ## SWA initialisation
+    if args.swa:
+        print('SWA training')
+        swa_model = None
+    else:
+        print('SGD training')
 
     # learning rate schedules
     def default_schedule(epoch):
-        t = (epoch) / args.epochs
-        lr_ratio = 0.01
-        t_const = 0.2 # 0.5 default
+        t = (epoch) / (args.swa_start if args.swa else args.epochs)
+        lr_ratio = args.swa_lr / args.lr_init if args.swa else 0.01
+        t_const = 0.5 # 0.2 previous
         if t <= t_const:
             factor = 1.0
         elif t <= 0.9:
@@ -223,6 +242,7 @@ if __name__ == "__main__":
                     momentum=0.9,
                     weight_decay=args.wd)
 
+
     # resume training
     start_epoch = 0
     if args.resume is not None:
@@ -236,6 +256,10 @@ if __name__ == "__main__":
         #model.load_state_dict(checkpoint['state_dict'])
         model.load_state_dict(matched_state_dict)
         optimizer.load_state_dict(checkpoint['optimizer'])
+        if args.swa:
+            swa_state_dict = checkpoint['swa_state_dict']
+            if swa_state_dict is not None:
+                swa_model.load_state_dict(swa_state_dict)
 
 
     optimizer = OptimLP(optimizer,
@@ -244,10 +268,19 @@ if __name__ == "__main__":
                         momentum_quant=momentum_quantizer,
                         acc_quant=acc_quantizer)
 
+    
+    ## defining the SWA schedulers
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    swa_scheduler = SWALR(optimizer, swa_lr=args.swa_lr)
+    
     # Prepare logging
     columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'tr_time', 'te_loss', 'te_acc', 'te_time']
+    if args.swa:
+        columns = columns[:-1] + ['swa_te_loss', 'swa_te_acc'] + columns[-1:]
+        print(f"Columns look like: {columns}")
+        swa_res = {'loss': None, 'accuracy': None}
 
-    k_value = 3
+    # k_value = 3
     checkpoint_num = 5
     PATH = 'testlogs/checkpoint.pth'
 
@@ -255,13 +288,17 @@ if __name__ == "__main__":
         print(f"Epoch: {epoch+1}")
         time_ep = time.time()
 
-        lr = schedule(epoch)
-        utils.adjust_learning_rate(optimizer, lr)
+        if not args.swa:
+            lr = schedule(epoch)
+            utils.adjust_learning_rate(optimizer, lr)
+        else:
+            lr = optimizer.param_groups[0]['lr']
 
+    
         # ADAPTIVE SCALING SECTION
         if args.adaptive_scale == 'True':
             
-            if ((epoch+1) != 1 and number_dict["weight"].k_exp != 1 and (epoch+1) % checkpoint_num == 0):
+            if ((epoch+1) != 1 and number_dict["weight"].k_exp != 1 and (epoch+1) % args.adaptive_start == 0):
                 print("K value switch")
                 # weight activate error accuracy grad momentum
                 print(f'Old k = {number_dict["weight"].k_exp}')
@@ -294,14 +331,22 @@ if __name__ == "__main__":
                 # print("model weights after loading checkpoint: ", model.fc1.weight)
 
                 # loading in the new optimiser
+                print("loading checkpoint - old model, opt, sched")
                 criterion = F.cross_entropy
                 optimizer = SGD(model.parameters(), lr = args.lr_init, momentum=0.9, weight_decay = args.wd)
-
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                optimizer = OptimLP(optimizer, weight_quant=weight_quantizer, grad_quant=grad_quantizer, momentum_quant=momentum_quantizer, acc_quant=acc_quantizer)
+
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+                swa_scheduler = SWALR(optimizer, swa_lr=args.swa_lr)
+
+                
+                scheduler.load_state_dict(checkpoint['scheduler'])
+                swa_scheduler.load_state_dict(checkpoint['swa_scheduler'])
                 # epoch = checkpoint['epoch']
                 # loss = checkpoint['loss']
 
-                optimizer = OptimLP(optimizer, weight_quant=weight_quantizer, grad_quant=grad_quantizer, momentum_quant=momentum_quantizer, acc_quant=acc_quantizer)
+                
 
 
         train_res = utils.run_epoch(loaders['train'], model, criterion,
@@ -311,11 +356,14 @@ if __name__ == "__main__":
 
         ## saving the model and optimiser state for adaptive scaling
         epc_num = epoch+1
-        if (epc_num == 4 or epc_num == 9 or epc_num == 14):
+        if (args.adaptive_scale == 'True' and epc_num % args.adaptive_start == (args.adaptive_start-1) and number_dict["weight"].k_exp != 1):
+            print("Saving checkpoint for adaptive scaling...")
             torch.save({
                 'epoch': epc_num,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler': scheduler.state_dict(),
+                'swa_scheduler': swa_scheduler.state_dict(),
                 'loss': train_res['loss']
                 }, PATH)
 
@@ -330,7 +378,43 @@ if __name__ == "__main__":
         else:
             test_res = {'loss': None, 'accuracy': None, 'time_pass': None}
 
-        values = [epoch + 1, lr, train_res['loss'], train_res['accuracy'], train_res['time_pass'], 
+        ## SWA to be used for model in here
+
+        # lr = optimizer.param_groups[0]['lr']
+
+        if args.swa and (epoch + 1) >= args.swa_start:
+            swa_scheduler.step()
+        else:
+            scheduler.step()
+
+        if args.swa and (epoch + 1) >= args.swa_start and (epoch + 1 - args.swa_start) % args.swa_c_epochs == 0:
+            if swa_model is None:
+                print("initialising swa model")
+                swa_model = AveragedModel(model)
+            else:
+                print("updating swa model")
+                swa_model.update_parameters(model)
+
+            if epoch == 0 or epoch % args.eval_freq == args.eval_freq - 1 or epoch == args.epochs - 1:
+                update_bn(loaders['train'], swa_model, device=torch.device('cuda'))
+                if args.swa_on_cpu:
+                    # moving swa_model to gpu for evaluation
+                    model = model.cpu()
+                    swa_model = swa_model.to(device)
+                print("SWA eval")
+                swa_res = utils.run_epoch(loaders['test'], swa_model, criterion, phase="eval")
+                if args.swa_on_cpu:
+                    model = model.to(device)
+                    swa_model = swa_model.cpu()
+            else:
+                swa_res = {'loss': None, 'accuracy': None}
+
+        ## END OF NEW SWA SECTION
+        if args.swa:
+            values = [epoch + 1, lr, train_res['loss'], train_res['accuracy'], train_res['time_pass'], 
+                    test_res['loss'], test_res['accuracy'], swa_res['loss'], swa_res['accuracy'], test_res['time_pass']]
+        else:
+            values = [epoch + 1, lr, train_res['loss'], train_res['accuracy'], train_res['time_pass'], 
                     test_res['loss'], test_res['accuracy'], test_res['time_pass']]
 
         table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='8.4f')

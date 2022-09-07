@@ -21,3 +21,4 @@ CIFAR10/**
 MNIST/**
 testlogs/**
 maincopy.py
+swa_testing/**

@@ -23,3 +23,11 @@ python3 main.py --data_path=. --dataset=MNIST --model=MNet --batch_size=256 --wd
 --weight-exp=2 --weight-man=5 \
 --activate-exp=2 --activate-man=5 \
 --error-exp=2 --error-man=5 --adaptive_scale=False --k=5
+
+
+To train a model with adaptive scaling and SWA optimisation use the following command:
+
+python main.py --data_path=. --dataset=CIFAR10 --model=MNet --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=10 \
+--weight-exp=2 --weight-man=5 \
+--activate-exp=2 --activate-man=5 \
+--error-exp=4 --error-man=3 --adaptive_scale=True --adaptive_start=2 --k=3 --swa --swa_start=5 --swa_lr=0.01
