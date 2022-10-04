@@ -154,7 +154,7 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
         # print("")
         # print("")
         # print("")
-        # # print("")
+        # print("")
         return out
 
 
@@ -180,6 +180,7 @@ def quantizer(forward_number=None, backward_number=None,
         A quantization function as specified (torch.Tensor -> torch.Tensor)
     """
     if forward_number is not None:
+        # import pdb; pdb.set_trace()
         print(f"forward number k val inside quantiser: {forward_number.k_exp}")
         if forward_number.exp == -1 or forward_number.man == -1:
             forward_number = None

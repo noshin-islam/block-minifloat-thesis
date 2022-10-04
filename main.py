@@ -6,6 +6,7 @@ import argparse
 import time
 import torch
 import torch.nn.functional as F
+from models.mnet_pact import MNet
 import utils
 import tabulate
 import bisect
@@ -30,8 +31,8 @@ if __name__ == "__main__":
     num_types = ["weight", "activate", "error", "acc", "grad", "momentum"]
 
     parser = argparse.ArgumentParser(description='Block Minifloat SGD training')
-    parser.add_argument('--dataset', type=str, default='CIFAR10', choices=['CIFAR10','CIFAR100','IMAGENET', 'MNIST'],
-                        help='dataset name: CIFAR10, CIFAR100 or IMAGENET')
+    parser.add_argument('--dataset', type=str, default='CIFAR10', choices=['CIFAR10','CIFAR100','IMAGENET', 'MNIST', 'TINY_IMAGENET'],
+                        help='dataset name: CIFAR10, CIFAR100, TINY_IMAGENET or IMAGENET')
     parser.add_argument('--data_path', type=str, default="/opt/datasets/", required=True, metavar='PATH',
                         help='path to datasets location (default: "./data")')
     parser.add_argument('--batch_size', type=int, default=128, metavar='N',
@@ -73,6 +74,14 @@ if __name__ == "__main__":
                         help='SWA model collection frequency/cycle length in epochs (default: 1)')
     parser.add_argument('--swa_on_cpu', action='store_true', help='store swa model on cpu flag (default: off)')
 
+    # adding cpt
+    parser.add_argument('--cpt', type=str, default='False')
+    parser.add_argument('--num_cyclic_period', type=int, default=1)
+    parser.add_argument('--cyclic_fwd_k_schedule', default=None, type=int, nargs='*',
+                        help='cyclic schedule for weight/act precision using k')
+    parser.add_argument('--cyclic_bw_k_schedule', default=None, type=int, nargs='*',
+                        help='cyclic schedule for grad precision using k')
+    
 
     for num in num_types:
         parser.add_argument('--{}-man'.format(num), type=int, default=-1, metavar='N',
@@ -142,22 +151,27 @@ if __name__ == "__main__":
         print(f"Standard exponent scaling of k = {args.k} being used")
 
     model_cfg = getattr(models, args.model)
+
+    # if args.dataset=="TINY_IMAGENET":
+    #     model_cfg = model_cfg(pretrained=True)
+
     model_cfg.kwargs.update({"quant":acc_err_quant})
 
     if args.dataset=="CIFAR10": num_classes=10
     elif args.dataset=="CIFAR100": num_classes=100
     elif args.dataset=="IMAGENET": num_classes=1000
     elif args.dataset=="MNIST": num_classes=10
+    elif args.dataset=="TINY_IMAGENET": num_classes=200
 
 
-    if (args.model == "ResNet18LP") or (args.model == "MobileNetV2LP"): 
-        model_cfg.kwargs.update({"image_size":224 if args.dataset=="IMAGENET" else 32})
+    if (args.model == "ResNet18LP") or (args.model == "ResNet50LP") or (args.model == "MobileNetV2LP"): 
+        model_cfg.kwargs.update({"image_size":224 if (args.dataset=="IMAGENET") else 64 if (args.dataset=="TINY_IMAGENET") else 28 if args.dataset=="MNIST" else 32})
     model = model_cfg.base(*model_cfg.args, num_classes=num_classes, **model_cfg.kwargs)
 
     # for name, param in model.named_parameters():
     #     print(f"name: {name}")
     #     print(f"value: {param}")
-    
+
 
 
     def optimizer_to(optim, device):
@@ -175,6 +189,64 @@ if __name__ == "__main__":
                         if subparam._grad is not None:
                             subparam._grad.data = subparam._grad.data.to(device)
 
+
+
+    def change_scale(model, optimizer, k_val, weight_bm, activate_bm, error_bm, acc_bm, grad_bm, momentum_bm):
+        print("k value switch")
+        
+        print(f'Old k = {weight_bm.k_exp}')
+
+        weight_bm.change_k(k_val)
+        activate_bm.change_k(k_val)
+        # error_bm.change_k(k_val)
+        # acc_bm.change_k(k_val)     #accuracy
+        # grad_bm.change_k(k_val)
+        # momentum_bm.change_k(k_val)
+
+        print(f'New k = {weight_bm.k_exp}')
+
+        weight_quantizer = quantizer(forward_number=weight_bm, forward_rounding='stochastic')
+
+        # grad_quantizer   = quantizer(forward_number=grad_bm, forward_rounding='stochastic')
+
+        # momentum_quantizer = quantizer(forward_number=momentum_bm, forward_rounding='stochastic')
+
+        # acc_quantizer = quantizer(forward_number=acc_bm, forward_rounding='stochastic')
+
+        acc_err_quant = lambda : Quantizer(activate_bm, error_bm, 'stochastic', 'stochastic')
+
+        # model.quant = acc_err_quant()
+        model.modify_layer_quant(acc_err_quant)
+        # print("model weights after loading checkpoint: ", model.fc1.weight)
+
+        # updating the optimiser
+        print("updating the quantisers in optimizer")
+        # optimizer.change_quantizers(weight_quantizer, grad_quantizer, momentum_quantizer, acc_quantizer)
+        optimizer.change_fwd_quantizer(weight_quantizer)
+
+        return model, optimizer
+
+
+    def cyclic_adjust_precision(args, _iter, cyclic_period):
+        assert len(args.cyclic_fwd_k_schedule) == 2
+        # assert len(args.cyclic_bw_k_schedule) == 2
+        print(f"cyclic k schedule: {args.cyclic_fwd_k_schedule}")
+        fwd_k_min = args.cyclic_fwd_k_schedule[0]
+        fwd_k_max = args.cyclic_fwd_k_schedule[1]
+
+        # bw_k_min = args.cyclic_bw_k_schedule[0]
+        # bw_k_max = args.cyclic_bw_k_schedule[1]
+
+        forward_k = np.rint(fwd_k_min +
+                                0.5 * (fwd_k_max - fwd_k_min) *
+                                (1 - np.cos(np.pi * ((_iter % cyclic_period) / cyclic_period) + np.pi)))
+        # backward_k = np.rint(bw_k_min +
+        #                             0.5 * (bw_k_max - bw_k_min) *
+        #                             (1 + np.cos(np.pi * ((_iter % cyclic_period) / cyclic_period) + np.pi)))
+
+        return forward_k
+
+            
     def count_parameters(model):
         table = PrettyTable(["Modules", "Parameters"])
         total_params = 0
@@ -230,7 +302,7 @@ if __name__ == "__main__":
 
     if (args.dataset == "CIFAR10" or args.dataset == "CIFAR100") and args.epochs >= 200:
         schedule = lambda x: cifar_schedule(x)
-    elif args.dataset == "IMAGENET":
+    elif args.dataset == "IMAGENET" or args.dataset == "TINY_IMAGENET":
         schedule = lambda x: imagenet_schedule(x)
     else:
         schedule = lambda x: default_schedule(x)
@@ -293,6 +365,11 @@ if __name__ == "__main__":
             utils.adjust_learning_rate(optimizer, lr)
         else:
             lr = optimizer.param_groups[0]['lr']
+
+        if args.cpt == 'True':
+            cyclic_period = int(args.epochs / args.num_cyclic_period)
+            k_new = cyclic_adjust_precision(args, epoch, cyclic_period)
+            model, optimizer = change_scale(model, optimizer, k_new, number_dict["weight"], number_dict["activate"], number_dict["error"], number_dict["acc"], number_dict["grad"], number_dict["momentum"])
 
     
         # ADAPTIVE SCALING SECTION

@@ -27,6 +27,9 @@ class MNet(nn.Module):
 
         self.pool = nn.MaxPool2d(2,2)
         self.quant = quant()
+    
+    def modify_layer_quant(self, new_quant):
+        self.quant = new_quant()
 
     def forward(self, x):
         
@@ -105,6 +108,7 @@ class MnistBase:
     kwargs = dict()
 
 class MNet(MnistBase):
+    kwargs = dict()
     pass
 
 class MNetSmall(MnistBase):

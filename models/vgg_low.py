@@ -7,6 +7,8 @@ import math
 import torch.nn as nn
 import torchvision.transforms as transforms
 
+from quant.quant_module import Quantizer
+
 __all__ = ['VGG16LP', 'VGG16BNLP', 'VGG19LP', 'VGG19BNLP']
 
 
@@ -42,8 +44,10 @@ class VGG(nn.Module):
 
         self.linear = nn.Linear
         self.conv = nn.Conv2d
+        # quant = quant()
 
         super(VGG, self).__init__()
+        # self.quant = quant()
         self.features = make_layers(cfg[depth], quant, batch_norm, self.conv)
         self.classifier = nn.Sequential(
             nn.Dropout(),
@@ -70,6 +74,20 @@ class VGG(nn.Module):
         x = self.classifier(x)
 
         return x
+    
+    def modify_layer_quant(self, new_quant):
+        
+        for layer in self.features:
+            if isinstance(layer, Quantizer):
+                # print("changing quant inside self.features")
+                layer = new_quant()
+        
+        for layer in self.classifier:
+            if isinstance(layer, Quantizer):
+                # print("changing quant inside self.classifier")
+                layer = new_quant()
+            
+
 
 class VGGBase:
     base = VGG

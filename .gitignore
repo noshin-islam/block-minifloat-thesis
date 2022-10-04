@@ -22,3 +22,8 @@ MNIST/**
 testlogs/**
 maincopy.py
 swa_testing/**
+tiny-imagenet-200/**
+s_annealing.py
+testing.py
+pact_module.py
+annealingmain.py

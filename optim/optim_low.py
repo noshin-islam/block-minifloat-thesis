@@ -109,7 +109,15 @@ class OptimLP(Optimizer):
 
         return loss
 
-
+    def change_quantizers(self, weight_quant, grad_quant, momentum_quant, acc_quant):
+        self.weight_quant=weight_quant
+        self.grad_quant=grad_quant
+        self.momentum_quant=momentum_quant
+        self.acc_quant=acc_quant
+    
+    def change_fwd_quantizer(self, weight_quant):
+        self.weight_quant=weight_quant
+        
     def __repr__(self):
         return "LP Optimizer: {}".format(self.optim.__repr__())
 

@@ -31,3 +31,18 @@ python main.py --data_path=. --dataset=CIFAR10 --model=MNet --batch_size=256 --w
 --weight-exp=2 --weight-man=5 \
 --activate-exp=2 --activate-man=5 \
 --error-exp=4 --error-man=3 --adaptive_scale=True --adaptive_start=2 --k=3 --swa --swa_start=5 --swa_lr=0.01
+
+
+With CPT
+python3 main.py --data_path=. --dataset=MNIST --model=MNet --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=30 \
+--weight-exp=2 --weight-man=5 \
+--activate-exp=2 --activate-man=5 \
+--error-exp=2 --error-man=5 --adaptive_scale=False --k=1 --cpt=True --num_cyclic_period=6 --cyclic_fwd_k_schedule 1 4
+
+
+python3 main.py --data_path=. --dataset=TINY_IMAGENET --data_path='./tiny-imagenet-200' --model=ResNet18LP --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=30 \
+--weight-exp=2 --weight-man=5 \
+--activate-exp=2 --activate-man=5 \
+--error-exp=2 --error-man=5 --adaptive_scale=False --k=1 --cpt=True --num_cyclic_period=6 --cyclic_fwd_k_schedule 1 4
+
+

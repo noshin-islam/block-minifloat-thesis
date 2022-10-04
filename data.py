@@ -5,7 +5,7 @@ import torchvision.datasets as datasets
 import os
 
 def get_data(dataset, data_path, batch_size):
-    assert dataset in ["CIFAR10", "CIFAR100", "IMAGENET", "MNIST"], "dataset not supported {}".format(dataset)
+    assert dataset in ["CIFAR10", "CIFAR100", "IMAGENET", "MNIST", "TINY_IMAGENET"], "dataset not supported {}".format(dataset)
     print('Loading dataset {} from {}'.format(dataset, data_path))
     if dataset in ["CIFAR10", "CIFAR100"]:
         ds = getattr(datasets, dataset)
@@ -65,6 +65,26 @@ def get_data(dataset, data_path, batch_size):
 
         test_set = [item for item in test_set]
         num_classes = 10
+    
+    elif dataset=="TINY_IMAGENET":
+        traindir = 'tiny-imagenet-200/train/'
+        valdir = 'tiny-imagenet-200/test/'
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        train_set = datasets.ImageFolder(
+            traindir,
+            transforms.Compose([
+            transforms.Resize(64),
+            transforms.RandomRotation(20),
+            transforms.RandomHorizontalFlip(0.5),
+            transforms.ToTensor(),
+            normalize,
+        ]))
+        test_set = datasets.ImageFolder(valdir, transforms.Compose([
+        transforms.Resize(64),
+        transforms.ToTensor(),
+        normalize,
+        ]))
+        num_classes = 200
 
     loaders = {
         'train': torch.utils.data.DataLoader(

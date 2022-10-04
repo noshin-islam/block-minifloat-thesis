@@ -6,13 +6,14 @@ Reference:
 [1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 '''
-# from xxlimited import new
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.init as init
+from pact_module import ActFn
+from torch.autograd import Variable
 
-
-__all__ = ['ResNet18LP', 'ResNet50LP']
+__all__ = ['ResNet18LP_pact', 'ResNet50LP_pact']
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -21,10 +22,15 @@ class BasicBlock(nn.Module):
         super(BasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.relu1 = nn.ReLU(inplace=True)
+
+        self.alpha1 = nn.Parameter(torch.tensor(10.))
+
+        # self.relu1 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
-        self.relu2 = nn.ReLU(inplace=True)
+
+        self.alpha2 = nn.Parameter(torch.tensor(10.))
+        self.ActFn = ActFn.apply
 
         self.quantA = quant()
         self.quantB = quant()
@@ -40,28 +46,35 @@ class BasicBlock(nn.Module):
         x = self.quantA(x)
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu1(out)
+        out = self.ActFn(out, self.alpha1)
 
         out = self.quantB(out)
         out = self.conv2(out)
         out = self.bn2(out)
 
         out = out + self.downsample(x)
-        out = self.relu2(out)
+        out = self.ActFn(out, self.alpha2)
         return out
 
 
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, in_planes, planes, quant, stride=1):
+    def __init__(self, in_planes, planes, stride=1):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
+        self.alpha1 = nn.Parameter(torch.tensor(10.))
+
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
+        self.alpha2 = nn.Parameter(torch.tensor(10.))
+
         self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+        self.alpha3 = nn.Parameter(torch.tensor(10.))
+
+        self.ActFn = ActFn.apply
 
         self.quant = quant()
 
@@ -73,14 +86,17 @@ class Bottleneck(nn.Module):
             )
 
     def forward(self, x):
-        x = self.quant(x)
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.quant(out)
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = self.quant(out)
+        x = quant(x)
+        out = self.ActFn(self.bn1(self.conv1(x)), self.alpha1)
+
+        out = quant(out)
+        out = self.ActFn(self.bn2(self.conv2(out)), self.alpha2)
+
+        out = quant(out)
         out = self.bn3(self.conv3(out))
         out += self.shortcut(x)
-        out = F.relu(out)
+        out = self.ActFn(out, self.alpha3)
+
         return out
 
 
@@ -91,31 +107,18 @@ class ResNet(nn.Module):
         #block = BasicBlock
         #num_blocks = [2, 2, 2, 2]
         self.imagenet = (image_size>=224)
-        self.tiny_imagenet = (image_size==64)
-        self.block = block
 
         if image_size >= 224:
             self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
             self.bn1 = nn.BatchNorm2d(64)
-            self.relu1 = nn.ReLU(inplace=True)
-
-        elif image_size == 64:
-            print("Tiny Imagenet used")
-            self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-            self.bn1 = nn.BatchNorm2d(64)
-            self.relu1 = nn.ReLU(inplace=True)
+            self.alpha1 = nn.Parameter(torch.tensor(10.))
+            self.ActFn = ActFn.apply
 
         elif image_size == 32:
             self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(64)
-            self.relu1 = nn.ReLU(inplace=True)
-
-        elif image_size == 28:
-            print("MNIST used")
-            self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
-            self.bn1 = nn.BatchNorm2d(64)
-            self.relu1 = nn.ReLU(inplace=True)
-
+            self.alpha1 = nn.Parameter(torch.tensor(10.))
+            self.ActFn = ActFn.apply
         else:
             raise NotImplementedError
 
@@ -126,10 +129,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], quant, stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], quant, stride=2)
         
-        self.avgpool = nn.AdaptiveAvgPool2d((1,1)) if (self.imagenet or self.tiny_imagenet) else nn.AvgPool2d(4)
-
-        self.dropout = nn.Dropout(p=0.1, inplace=False)
-
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1)) if self.imagenet else nn.AvgPool2d(4)
         self.linear = nn.Linear(512*block.expansion, num_classes)
 
         self.quant = quant()
@@ -145,15 +145,7 @@ class ResNet(nn.Module):
     def _make_layer(self, block, planes, num_blocks, quant, stride):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
-        # print(f"type of block : {type(block)}")
-        # print(f"block : {block}")
         for stride in strides:
-            # if block == BasicBlock:
-            #     print("incorrect")
-            #     layers.append(block(self.in_planes, planes, quant, stride))
-            # elif block == Bottleneck:
-            #     print("correct")
-            #     layers.append(block(self.in_planes, planes, stride))
             layers.append(block(self.in_planes, planes, quant, stride))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
@@ -163,7 +155,7 @@ class ResNet(nn.Module):
         x = self.quant(x) #x if self.imagenet else self.quant(x)
         x = self.conv1(x)
         x = self.bn1(x)
-        x = self.relu1(x)
+        x = self.ActFn(x, self.alpha1)
         x = self.maxpool(x) if self.imagenet else x
 
         # blocks are quantised
@@ -174,55 +166,19 @@ class ResNet(nn.Module):
 
         x = self.quant(x) #x if self.imagenet else self.quant(x)
         x = self.avgpool(x) #F.avg_pool2d(x, 4)
-    
         x = x.view(x.size(0), -1)
-
-        if self.tiny_imagenet:
-            print("adding dropout")
-            x = self.dropout(x)
-            
         out = self.linear(x)
         return out
 
-    def modify_layer_quant(self, new_quant):
-        self.quant = new_quant()
-        for layer in self.layer1:
-            if self.block == BasicBlock: #resnet18LP
-                layer.quantA = new_quant()
-                layer.quantB = new_quant()
-            else:
-                layer.quant = new_quant() #resnet50LP
-        
-        for layer in self.layer2:
-            if self.block == BasicBlock:
-                layer.quantA = new_quant()
-                layer.quantB = new_quant()
-            else:
-                layer.quant = new_quant()
-
-        for layer in self.layer3:
-            if self.block == BasicBlock:
-                layer.quantA = new_quant()
-                layer.quantB = new_quant()
-            else:
-                layer.quant = new_quant()
-
-        for layer in self.layer4:
-            if self.block == BasicBlock:
-                layer.quantA = new_quant()
-                layer.quantB = new_quant()
-            else:
-                layer.quant = new_quant()
 
 
-
-class ResNet18LP:
+class ResNet18LP_pact:
     base = ResNet
     args = list()
     kwargs = {'block':BasicBlock, 'num_blocks':[2,2,2,2]}
 
 
-class ResNet50LP:
+class ResNet50LP_pact:
     base = ResNet
     args = list()
     kwargs = {'block':Bottleneck, 'num_blocks':[3,4,6,3]}

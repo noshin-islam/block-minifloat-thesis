@@ -97,6 +97,13 @@ class MobileNetV2(nn.Module):
                 layers.append(Block(in_planes, out_planes, expansion, stride, quant))
                 in_planes = out_planes
         return nn.Sequential(*layers)
+    
+    def modify_layer_quant(self, new_quant):
+        self.quant = new_quant()
+        for layer in self.layers:
+            layer.quant = new_quant()
+        
+
 
     def forward(self, x):
         #x = self.quant(x)
