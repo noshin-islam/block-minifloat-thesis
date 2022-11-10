@@ -41,7 +41,6 @@ class BlockMinifloat(Number):
         #self.of_emax = self.emax
         #self.of_man = self.man 
 
-        #for scaling by k multiply emax and emin by k (wherever 2**sth it will be 2^ksth)
 
 
     def __str__(self):
@@ -66,8 +65,3 @@ class BlockMinifloat(Number):
         self.emax = (2**(self.exp)-1 - 2**(self.exp-1))*self.k_exp
         self.emin = (-2**(self.exp-1))*self.k_exp
         self.max_number = 2**(self.emax)*(2-2**(-self.man))
-
-# test_num = BlockMinifloat(exp=2, man=5, tile=-1, flush_to_zero=False, k_exp= 3)
-# print(f"emax is {test_num.emax}")
-# test_num.change_k(1)
-# print(f"emax is {test_num.emax}")

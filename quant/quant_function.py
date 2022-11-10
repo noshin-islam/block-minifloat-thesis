@@ -30,8 +30,6 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
 
     assert isinstance(x, torch.Tensor), "x is not a single precision Floating Point Tensor"
 
-    # print("quant input: ", x)
-    # print(f"k value being used for quantisation is {k_exp}")
     # shared exponent
     mean_func = lambda x, dim: torch.mean(x, dim)
     max_func = lambda x, dim: torch.max(x, dim)[0]
@@ -70,32 +68,18 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
     
     # minifloat
     else:
-
-        ### is scaling needed here? k x offset  ----- no need to multiply max exponent
-        offset = max_exponent - number.emax
-        # print("max exp: ", max_exponent)
-
-        # print(f"exp to calc emax: {number.exp}")
-        # print(f"k to calc emax: {number.k_exp}")
-        # print(f"emax: {number.emax}")
-        # print("offset: ", offset)
+        offset = max_exponent - number.emax #this is the shared exponent bias we used
 
         rem = torch.remainder(offset, k_exp)
-        # print(f"{rem}")
-        rounded = round_to_multiple(offset, k_exp)
-        # print("rounded: ", rounded)
-        offset = torch.where(rem!=0, rounded, offset)
-        # print("offset post rounding: ", offset)
 
-        # if (offset % k_exp != 0):
-        #     offset = round_to_multiple(offset, k_exp)
-            # print("offset post rounding: ", offset)
+        rounded = round_to_multiple(offset, k_exp)
+ 
+        offset = torch.where(rem!=0, rounded, offset)
 
         # shared exponent shifting
         shift = 2**(-offset)
-        # print("shift: ", shift)
+  
         i = x * shift #this multiplication is done in order to left or right shift the data to centre it around 0 -- anything that cannot be represented will be 0
-        # print("i = x*shift: ", i)
 
         # clamping at zero (uses QPyTorch float_quantizer - qtorch doesn't have a zero bit?)
         if (number.flush_to_zero):
@@ -117,20 +101,19 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
         sgn = torch.sign(i)
         i = torch.abs(i)
         e = torch.floor(torch.log2(i+1e-60)) #exponent of every point in the data
-        # print("exp of every point: ", e)
+
         # clamp the exponent
         e.clamp_(emin+1, emax) # emin+1 for subnormal region
-        # print(f"exp being clamped to the range: {emin+1} to {emax}")
-        # print("exp of every point post clamp: ", e)
+
         # unpack frac for subnormal and normal region
         ie = i*2**(-e)
-        # print("ie: ",ie)
+
         me = 2**(e)
         #something that has its exponent clamped out in the e.clamp stage enters into the subnorm region
+
         f = torch.where(i<esbn, ie, ie-1)  #for the subnormal region, just use ie, else for normal region, subtact 1 to remove the 1.xy part 
         #f stands for just the fractional part of the number to be represented  --- between 1 and 0
         #f is an integer number
-        # print("frac part: ", f)
 
         # rounding on frac
         if rounding == "stochastic":
@@ -143,18 +126,12 @@ def block_minifloat_quantize(x, number, rounding="stochastic", tensor_type="x", 
         else:
             f.mul_(mval).round_()
             clipped.div_(mval).mul_(me)
+
         # sign magnitude multiplication for subnormal and normal
         k = torch.where(i<esbn, clipped, me+clipped)
         k.clamp_(-rlim, rlim)
         out = sgn * k * 2**(offset)
 
-        # print(f"quantised entry: {k} x 2^{offset}")
-        # print("")
-        # print("Error: ", x-out)
-        # print("")
-        # print("")
-        # print("")
-        # print("")
         return out
 
 

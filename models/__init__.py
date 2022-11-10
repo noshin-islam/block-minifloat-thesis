@@ -6,6 +6,3 @@ from .wideresnet_low import *
 from .preresnet_low import *
 from .mnist_net import *
 from .fc import *
-
-from .resnet_pact import *
-from .mnet_pact import *

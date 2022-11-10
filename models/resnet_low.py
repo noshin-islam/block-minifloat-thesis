@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-__all__ = ['ResNet18LP', 'ResNet50LP']
+__all__ = ['ResNet18LP', 'ResNet50LP', 'ResNet34LP', 'ResNet101LP', 'ResNet152LP']
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -100,7 +100,6 @@ class ResNet(nn.Module):
             self.relu1 = nn.ReLU(inplace=True)
 
         elif image_size == 64:
-            print("Tiny Imagenet used")
             self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(64)
             self.relu1 = nn.ReLU(inplace=True)
@@ -111,7 +110,6 @@ class ResNet(nn.Module):
             self.relu1 = nn.ReLU(inplace=True)
 
         elif image_size == 28:
-            print("MNIST used")
             self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(64)
             self.relu1 = nn.ReLU(inplace=True)
@@ -145,15 +143,7 @@ class ResNet(nn.Module):
     def _make_layer(self, block, planes, num_blocks, quant, stride):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
-        # print(f"type of block : {type(block)}")
-        # print(f"block : {block}")
         for stride in strides:
-            # if block == BasicBlock:
-            #     print("incorrect")
-            #     layers.append(block(self.in_planes, planes, quant, stride))
-            # elif block == Bottleneck:
-            #     print("correct")
-            #     layers.append(block(self.in_planes, planes, stride))
             layers.append(block(self.in_planes, planes, quant, stride))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
@@ -178,8 +168,7 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
 
         if self.tiny_imagenet:
-            print("adding dropout")
-            x = self.dropout(x)
+            x = self.dropout(x) #dropout added if tiny imagenet is used
             
         out = self.linear(x)
         return out
@@ -221,8 +210,22 @@ class ResNet18LP:
     args = list()
     kwargs = {'block':BasicBlock, 'num_blocks':[2,2,2,2]}
 
+class ResNet34LP:
+    base = ResNet
+    args = list()
+    kwargs = {'block':BasicBlock, 'num_blocks':[3,4,6,3]}
 
 class ResNet50LP:
     base = ResNet
     args = list()
     kwargs = {'block':Bottleneck, 'num_blocks':[3,4,6,3]}
+
+class ResNet101LP:
+    base = ResNet
+    args = list()
+    kwargs = {'block':Bottleneck, 'num_blocks':[3,4,23,3]}
+
+class ResNet152LP:
+    base = ResNet
+    args = list()
+    kwargs = {'block':Bottleneck, 'num_blocks':[3,8,36,3]}

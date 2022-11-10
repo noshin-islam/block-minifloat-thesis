@@ -6,7 +6,6 @@ import argparse
 import time
 import torch
 import torch.nn.functional as F
-from models.mnet_pact import MNet
 import utils
 import tabulate
 import bisect
@@ -152,9 +151,6 @@ if __name__ == "__main__":
 
     model_cfg = getattr(models, args.model)
 
-    # if args.dataset=="TINY_IMAGENET":
-    #     model_cfg = model_cfg(pretrained=True)
-
     model_cfg.kwargs.update({"quant":acc_err_quant})
 
     if args.dataset=="CIFAR10": num_classes=10
@@ -198,6 +194,9 @@ if __name__ == "__main__":
 
         weight_bm.change_k(k_val)
         activate_bm.change_k(k_val)
+
+        #uncomment the commented out lines to enable Cyclic Scaling in both forward and backward direction
+
         # error_bm.change_k(k_val)
         # acc_bm.change_k(k_val)     #accuracy
         # grad_bm.change_k(k_val)
@@ -220,30 +219,23 @@ if __name__ == "__main__":
         # print("model weights after loading checkpoint: ", model.fc1.weight)
 
         # updating the optimiser
-        print("updating the quantisers in optimizer")
-        # optimizer.change_quantizers(weight_quantizer, grad_quantizer, momentum_quantizer, acc_quantizer)
-        optimizer.change_fwd_quantizer(weight_quantizer)
+        # print("updating the quantisers in optimizer")
+        # optimizer.change_quantizers(weight_quantizer, grad_quantizer, momentum_quantizer, acc_quantizer) #use this line for cyclic scaling on both directions
+        optimizer.change_fwd_quantizer(weight_quantizer) #comment this out if you've uncommented above line of code -- this one is only when using cyclic scaling in forward dir
 
         return model, optimizer
 
 
     def cyclic_adjust_precision(args, _iter, cyclic_period):
         assert len(args.cyclic_fwd_k_schedule) == 2
-        # assert len(args.cyclic_bw_k_schedule) == 2
-        print(f"cyclic k schedule: {args.cyclic_fwd_k_schedule}")
         fwd_k_min = args.cyclic_fwd_k_schedule[0]
         fwd_k_max = args.cyclic_fwd_k_schedule[1]
 
-        # bw_k_min = args.cyclic_bw_k_schedule[0]
-        # bw_k_max = args.cyclic_bw_k_schedule[1]
 
         forward_k = np.rint(fwd_k_min +
                                 0.5 * (fwd_k_max - fwd_k_min) *
                                 (1 - np.cos(np.pi * ((_iter % cyclic_period) / cyclic_period) + np.pi)))
-        # backward_k = np.rint(bw_k_min +
-        #                             0.5 * (bw_k_max - bw_k_min) *
-        #                             (1 + np.cos(np.pi * ((_iter % cyclic_period) / cyclic_period) + np.pi)))
-
+        
         return forward_k
 
             
@@ -264,7 +256,6 @@ if __name__ == "__main__":
     ####
     model.to(device)
     
-    # model.cuda()
 
     ## SWA initialisation
     if args.swa:
@@ -357,7 +348,6 @@ if __name__ == "__main__":
     PATH = 'testlogs/checkpoint.pth'
 
     for epoch in range(start_epoch, args.epochs):
-        print(f"Epoch: {epoch+1}")
         time_ep = time.time()
 
         if not args.swa:
@@ -466,10 +456,10 @@ if __name__ == "__main__":
 
         if args.swa and (epoch + 1) >= args.swa_start and (epoch + 1 - args.swa_start) % args.swa_c_epochs == 0:
             if swa_model is None:
-                print("initialising swa model")
+                # print("initialising swa model")
                 swa_model = AveragedModel(model)
             else:
-                print("updating swa model")
+                # print("updating swa model")
                 swa_model.update_parameters(model)
 
             if epoch == 0 or epoch % args.eval_freq == args.eval_freq - 1 or epoch == args.epochs - 1:

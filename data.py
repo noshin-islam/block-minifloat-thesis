@@ -47,10 +47,6 @@ def get_data(dataset, data_path, batch_size):
         num_classes = 1000
 
     elif dataset=="MNIST":
-        # traindir = '/MNIST/train'
-        # valdir = '/MNIST/val'
-        # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-        #                                  std=[0.229, 0.224, 0.225])
         IMAGE_SIZE = 20
         #Generates an object to store multiple transformations
 

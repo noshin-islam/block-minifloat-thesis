@@ -159,6 +159,19 @@ class PreResNet(nn.Module):
 
         return x
 
+    def modify_layer_quant(self, new_quant):
+        self.quant = new_quant()
+        for layer in self.layer1:
+            layer.quant = new_quant()
+        
+        for layer in self.layer2:
+            layer.quant = new_quant()
+
+        for layer in self.layer3:
+            layer.quant = new_quant()
+
+
+
 class PreResNet164LP:
     base = PreResNet
     args = list()
