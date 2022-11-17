@@ -1,6 +1,6 @@
 # Training with Block Minifloat in Pytorch
 
-This repository provides code to accompany the paper [A Block Minifloat Representation for Training Deep Neural Networks](https://openreview.net/forum?id=6zaTwpNSsQ2).
+This repository is based on the code to accompany the paper [A Block Minifloat Representation for Training Deep Neural Networks](https://openreview.net/forum?id=6zaTwpNSsQ2).
 
 This project builds up on the work done by Fox et al. in https://github.com/sfox14/block_minifloat .
 
