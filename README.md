@@ -30,7 +30,7 @@ python3 main.py --data_path=. --dataset=CIFAR10 --model=VGG16LP --batch_size=256
 ```
 
 
-To train a model with adaptive scaling, use the following command:
+To train a model with adaptive scaling starting from k=3, use the following command:
 
 ```bash
 python main.py --data_path=. --dataset=CIFAR10 --model=ResNet18LP --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=10 \
