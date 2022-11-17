@@ -12,6 +12,7 @@ pytorch>=1.1
 
 
 ## Usage
+This will train a VGG-16 model using the BM8 format specified in the paper.
 ```bash
 python main.py --data_path=. --dataset=CIFAR10 --model=VGG16LP --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=10 \
 --weight-exp=2 --weight-man=5 \
@@ -19,10 +20,8 @@ python main.py --data_path=. --dataset=CIFAR10 --model=VGG16LP --batch_size=256 
 --error-exp=4 --error-man=3
 ```
 
-This will train a ResNet-18 model using the BM8 format specified in the paper.
 
-
-Train a model on the CIFAR10 dataset.
+This will train a model using Scaled BM with a scale factor of 5 (change k value as needed).
 ```bash
 python3 main.py --data_path=. --dataset=CIFAR10 --model=VGG16LP --batch_size=256 --wd=1e-4 --lr_init=0.1 --epochs=15 \
 --weight-exp=2 --weight-man=5 \
